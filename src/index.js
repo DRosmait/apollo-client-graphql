@@ -1,11 +1,10 @@
-import 'cross-fetch/polyfill';
-import ApolloClient from 'apollo-boost';
-
 import 'dotenv/config';
+import 'cross-fetch/polyfill';
+import ApolloClient, { gql } from 'apollo-boost';
 
 const client = new ApolloClient({
     uri: 'https://api.github.com/graphql',
-    reques: operetion => {
+    request: operetion => {
         operetion.setContext({
             headers: {
                 authorization: `Bearer ${process.env.GITHUB_ACCESS_TOKEN}`,
@@ -14,14 +13,92 @@ const client = new ApolloClient({
     },
 });
 
-const userCredentials = { firstname: 'Robin' };
-const userDetails = { nationality: 'German' };
+const GET_REPOSITORIES_OF_ORGANIZATION = gql`
+    query ($organization: String!, $cursor: String) {
+        organization(login: $organization) {
+            name
+            url
+            repositories(first: 5, after: $cursor, orderBy: { field: STARGAZERS, direction: DESC }) {
+                edges {
+                    node {
+                        ...RepositoryFrag
+                    }
+                }
+                pageInfo {
+                    endCursor
+                    hasNextPage
+                }
+            }
+        }
+    }
 
-const user = {
-  ...userCredentials,
-  ...userDetails,
-};
+    fragment RepositoryFrag on Repository {
+        name
+        url
+        stargazers {
+            totalCount
+        }
+    }
+`;
 
-console.log(user);
+const ADD_STAR = gql`
+    mutation AddStar($repositoryId: ID!) {
+        addStar(input: { starrableId: $repositoryId}) {
+            starrable {
+                id
+                viewerHasStarred
+            }
+        }
+    }
+`;
 
-console.log(process.env.SOME_ENV_VARIABLE);
+const REMOVE_STAR = gql`
+    mutation RemoveStar($repositoryId: ID!) {
+        removeStar(input: { starrableId: $repositoryId }) {
+            starrable {
+                id
+                viewerHasStarred
+            }
+        }
+    }
+`
+
+// client
+//     .query({
+//         query: GET_REPOSITORIES_OF_ORGANIZATION,
+//         variables: {
+//             organization: 'the-road-to-learn-react',
+//         }
+//     })
+//     .then(({ data }) => {
+//         console.log(data.organization.repositories.edges.map(r => r.node));
+
+//         const { endCursor: cursor } = data.organization.repositories.pageInfo;
+
+//         return client.query({
+//             query: GET_REPOSITORIES_OF_ORGANIZATION,
+//             variables: {
+//                 organization: 'the-road-to-learn-react',
+//                 cursor,
+//             },
+//         });
+//     })
+//     .then(({ data }) => console.log(data.organization.repositories.edges.map(r => r.node)));
+
+client
+    .mutate({
+        mutation: ADD_STAR,
+        variables: { repositoryId: 'MDEwOlJlcG9zaXRvcnk2MzM1MjkwNw==', }
+    })
+    .then(data => data.data.addStar.starrable)
+    .then(starrable => {
+        console.log(starrable);
+
+        return client
+            .mutate({
+                mutation: REMOVE_STAR,
+                variables: { repositoryId: 'MDEwOlJlcG9zaXRvcnk2MzM1MjkwNw==', },
+            });
+    })
+    .then(data => data.data.removeStar.starrable)
+    .then(console.log);
